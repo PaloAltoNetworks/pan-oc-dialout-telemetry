@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+//package proto;
+package com.panw.aiop.stages;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+//import "github.com/openconfig/gnmi/proto/gnmi/gnmi.proto";
+import "gnmi.proto";
+
+option go_package="./proto";
+
+service CloudTelemetryService {
+
+  // Start of the Device session
+  rpc DeviceSessionStart(DeviceSessionStartRequest) returns (DeviceSessionStartResponse);
+
+  // Device will  publish all the path on which cloud can send a subscribe request and wait for an ack from cloud
+  rpc DiscoverDeviceCapability(stream DiscoverDeviceCapabilityMessage) returns (stream DiscoverDeviceCapabilityResponse);
+
+  // Device subscribes to cloud requests over a bi-directional grpc stream in long client streaming mode. This bi-directional grpc
+  // stream will be used by the Cloud Telemetry Service to send 2 types of control messages to the Device Telemetry Bridge:
+  // gNMI Get rpc: Get method will be use to collect on-demand telemetry
+  // gNMI Subscribe rpc: Subscribe method will be used to stream delta Device Notifications
+  // Device streams 1 or more Device Notification messages to Cloud over a bi-directional grpc stream
+  rpc StreamDeviceChangeNotifications(stream StreamDeviceChangeNotificationsDeviceMessage) returns (stream StreamDeviceChangeNotificationsCloudMessage);
+
+  // Device requests Cloud Telemetry Service to terminate the given Device Session
+  rpc DeviceSessionTerminate(DeviceSessionTerminateRequest) returns (DeviceSessionTerminateResponse);
+
+  // Query Cloud Telemetry Service for statistics associated with the given Device Session
+  rpc QueryDeviceSessionStatistics(QueryDeviceSessionStatisticsRequest) returns (QueryDeviceSessionStatisticsResponse);
+
+  // Query Cloud Telemetry Service for Service Statistics associated with all live Device Sessions
+  rpc QueryServiceStatistics(QueryServiceStatisticsRequest) returns (QueryServiceStatisticsResponse);
+}
+
+// Start a new Device Session on Cloud Telemetry Service
+message DeviceSessionStartRequest {
+  // current timestamp on the device as obtained from "show system info" cli cmd
+  google.protobuf.Timestamp device_time = 1;
+
+  // uptime of the device as obtained from "show system info" cli cmd
+  string device_uptime = 2;
+
+  // unique identity of the device
+  DeviceIdentity device_identity = 3;
+}
+
+// Models device identity metadata, all these fields can be obtained from the device via "show system info" cli cmd
+message DeviceIdentity {
+  string serial = 1;
+  string panos_version = 2;
+  string family = 3;
+  string model = 4;
+  string cloud_mode = 5;
+  string hostname = 6;
+  string ipv4_address = 7;
+  string ipv6_address = 8;
+  string vm_uuid = 9;
+  string vm_mode = 10;
+}
+
+//
+message DeviceSessionStartResponse {
+  // globally unique session identifier
+  string session_id = 1;
+
+  // session creation time
+  google.protobuf.Timestamp session_created_time = 2;
+
+  // current state of the device session fsm
+  DeviceSessionState device_session_state = 3;
+
+  Status status = 4;
+}
+
+//
+message DiscoverDeviceCapabilityMessage {
+  // session identifier
+  string session_id = 1;
+
+  // device serial
+  string serial = 2;
+
+  repeated DeviceCapabilities device_capabilities = 3;
+
+}
+
+message DeviceCapabilities {
+  repeated gnmi.Path device_paths = 1;
+  int64 publish_interval = 2;
+}
+
+
+message DiscoverDeviceCapabilityResponse {
+  // session identifier
+  string session_id = 1;
+
+  // device serial
+  string serial = 2;
+
+  Status status = 3;
+
+  //request id
+  string cloud_request_id = 4;
+}
+
+
+//
+message StreamDeviceChangeNotificationsDeviceMessage {
+  // session identifier
+  string session_id = 1;
+
+  // device serial
+  string serial = 2;
+
+  //request id
+  string cloud_request_id = 3;
+
+  repeated gnmi.SubscribeResponse device_subscribe_responses = 4;
+
+  Status status = 5;
+
+}
+
+//
+message StreamDeviceChangeNotificationsCloudMessage {
+  // session identifier
+  string session_id = 1;
+
+  // device serial
+  string serial = 2;
+
+  // request id
+  string cloud_request_id = 3;
+
+  //request for subscribing to a path
+  gnmi.SubscribeRequest subscribe_request = 4;
+
+  // blob-only upload url
+  string data_push_url = 5;
+
+  string payload = 6;
+
+  Status status = 7;
+
+  //string []data_push_urls = 6;
+
+  //url1  -> DNS
+  //url_
+}
+
+// Terminate the given Device Session on Cloud Telemetry Service
+message DeviceSessionTerminateRequest {
+  // session identifier
+  string session_id = 1;
+
+  // device serial
+  string serial = 2;
+}
+
+//
+message DeviceSessionTerminateResponse {
+  // session identifier
+  string session_id = 1;
+
+  //
+  google.protobuf.Timestamp session_terminated_time = 2;
+
+  Status status = 7;
+}
+
+//
+message QueryDeviceSessionStatisticsRequest {
+  // session identifier
+  string session_id = 1;
+}
+
+//
+message QueryDeviceSessionStatisticsResponse {
+  // session identifier
+  string session_id = 1;
+
+  // current state of the device session fsm
+  DeviceSessionState device_session_state = 2;
+}
+
+//
+message QueryServiceStatisticsRequest {
+}
+
+//
+message QueryServiceStatisticsResponse {
+}
+
+//
+enum DeviceSessionState {
+  SESSION_INIT = 0;
+  SESSION_STREAMING = 1;
+  SESSION_CLOSING = 2;
+  SESSION_ERRORED = 3;
+}
+
+//
+// The `Status` type defines a logical error model that is suitable for
+// different programming environments, including REST APIs and RPC APIs. It is
+// used by [gRPC](https://github.com/grpc). Each `Status` message contains
+// three pieces of data: error code, error message, and error details.
+//
+// You can find out more about this error model and how to work with it in the
+// [API Design Guide](https://cloud.google.com/apis/design/errors).
+message Status {
+  // The status code, which should be an enum value of
+  // [google.rpc.Code][google.rpc.Code].
+  int32 code = 1;
+
+  // A developer-facing error message, which should be in English. Any
+  // user-facing error message should be localized and sent in the
+  // details field, or localized by the client.
+  string message = 2;
+
+  // A list of messages that carry the error details.
+  repeated google.protobuf.Any details = 3;
+}
